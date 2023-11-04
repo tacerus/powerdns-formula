@@ -10,12 +10,8 @@ powerdns:
     allow-axfr-ips: '127.0.0.0/8,::1'
     api: 'yes'
     api-key: d34db33f
+    gsqlite3-database: /var/lib/powerdns/pdns.sqlite3
+    gsqlite3-dnssec: 'yes'
+    launch: gsqlite3
     webserver: 'yes'
     webserver-port: 8081
-
-    launch: gmysql
-    gmysql-host: localhost
-    gmysql-port: 3306
-    gmysql-user: pdns
-    gmysql-password: mys3cr3tdbp4ssw0rd
-    gmysql-dnssec: 'yes'
