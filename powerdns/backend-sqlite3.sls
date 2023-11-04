@@ -21,6 +21,7 @@ powerdns_backend_sqlite3:
       - pkg: powerdns_backend_sqlite3
 
 powerdns_init_db:
+  {%- if powerdns.get('write_backend_sqlite3_pkg_sql', True) %}
   file.managed:
     - name: {{ powerdns.backend_sqlite3_pkg_sql }}
     - source: salt://powerdns/files/schema.sqlite3.sql
@@ -32,6 +33,7 @@ powerdns_init_db:
       - pkg: powerdns_backend_sqlite3
     - require_in:
       - cmd: powerdns_init_db
+  {%- endif %}
   cmd.run:
     - name: sqlite3 {{ powerdns.config['gsqlite3-database'] }} < {{ powerdns.backend_sqlite3_pkg_sql }}
     - creates: {{ powerdns.config['gsqlite3-database'] }}

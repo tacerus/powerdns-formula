@@ -72,6 +72,7 @@ Suse:
   backend_remote_pkg: pdns-backend-remote
   backend_sqlite3_pkg: pdns-backend-sqlite3
   backend_sqlite3_pkg_sql: /usr/share/doc/packages/pdns/schema.sqlite3.sql
+  write_backend_sqlite3_pkg_sql: false
 
 Gentoo: {}
 
