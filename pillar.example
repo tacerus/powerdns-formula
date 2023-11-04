@@ -19,3 +19,11 @@ powerdns:
     gmysql-user: pdns
     gmysql-password: mys3cr3tdbp4ssw0rd
     gmysql-dnssec: 'yes'
+
+  # manage supermaster/autoprimary entries, currently only compatible with the SQLite3 backend
+  database:
+    supermasters:
+      - address: 127.0.0.1
+        name: ns1.example.com
+      - address: 127.0.0.2
+        name: ns2.example.com
