@@ -48,18 +48,151 @@ def zone_present(name, kind=None, rrsets=None, masters=None, dnssec=None, nsec3p
     for key, want_value in want_data.items():
       log.debug(f'powerdns: reading wanted key "{key}"')
       have_value = have_data[key]
-      if want_value != have_value:
-        log.debug('powerdns: key differs')
-        ret['changes'][key] = {
-          'old': have_value,
-          'new': want_value,
-        }
 
-        payload.update(
-          {
-            key: want_value,
+      if type(want_value) != type(have_value):
+        log.error('powerdns: comparison of values with different instance types is not supported')
+        return False
+
+      if isinstance(want_value, list):
+        if key == 'nameservers':
+          want_value.sort()
+          have_value.sort()
+
+        if key == 'rrsets':
+          for i, rrset in enumerate(want_value):
+            want_value[i-1]['name'] = __salt__['powerdns.canonicalize_recname'](zone, rrset['name'])
+
+          payload.update(
+            {
+              key: [
+                {
+                  'changetype': 'REPLACE',
+                  **rrset
+                } for rrset in want_value
+              ],
+            }
+          )
+
+          if not 'rrsets' in ret['changes']:
+            ret['changes']['rrsets'] = {}
+
+          for want_rrset in want_value:  # for dict in list of rrsets
+            log.debug(f'powerdns: want rrset {want_rrset}')
+            rrset_name = f'{want_rrset["name"]}_{want_rrset["type"]}'
+
+            for have_rrset in have_value:
+              log.debug(f'powerdns: have rrset {have_rrset}')
+
+              if want_rrset['name'] == have_rrset['name'] and want_rrset['type'] == have_rrset['type']:
+                log.debug('powerdns: match!')
+
+                for rrset_key in want_rrset.keys():
+                  log.debug(f'powerdns: parsing key "{rrset_key}"')
+
+                  if rrset_key == 'name':
+                    continue
+
+                  if rrset_key in have_rrset:
+                    log.debug('powerdns: found wanted key in existing keys')
+
+                    if isinstance(want_rrset[rrset_key], str) or isinstance(want_rrset[rrset_key], int):
+                      if want_rrset[rrset_key] != have_rrset[rrset_key]:
+                        if rrset_name not in ret['changes']['rrsets']:
+                          ret['changes']['rrsets'][rrset_name] = {
+                            'old': {},
+                            'new': {},
+                          }
+
+                        ret['changes']['rrsets'][rrset_name]['old'] = have_rrset[rrset_key]
+                        ret['changes']['rrsets'][rrset_name]['new'] = want_rrset[rrset_key]
+
+                    elif isinstance(want_rrset[rrset_key], list):
+                      if rrset_key == 'comments':
+                        log.error('powerdns: comments in rrsets are not supported by the formula')
+
+                      have_rrset_records = sorted(have_rrset[rrset_key], key=lambda record: record['content'])
+                      want_rrset_records = sorted(want_rrset[rrset_key], key=lambda record: record['content'])
+
+                      if have_rrset_records == want_rrset_records:
+                        log.debug('powerdns: records match exactly')
+                        continue
+
+                      new_rrset_records = [record for record in want_rrset_records if record['content'] not in [record['content'] for record in have_rrset_records]]
+
+                      for i, want_rrset_record in enumerate(want_rrset_records):
+                        i = i-1
+                        want_rrset_record_disabled = want_rrset_record.get('disabled', False)
+                        if want_rrset_record['content'] == have_rrset_records[i]['content']:
+                          if want_rrset_record_disabled != have_rrset_records[i]['disabled']:
+                            if rrset_name not in ret['changes']['rrsets']:
+                              ret['changes']['rrsets'][rrset_name] = {
+                                'old': {},
+                                'new': {},
+                              }
+
+                            for x in ['old', 'new']:
+                              if 'records' not in ret['changes']['rrsets'][rrset_name][x]:
+                                ret['changes']['rrsets'][rrset_name][x]['records'] = []
+
+                            ret['changes']['rrsets'][rrset_name]['old']['records'].append({have_rrset_records[i]['name']: not have_rrset_records[i]['disabled']})
+                            ret['changes']['rrsets'][rrset_name]['new']['records'].append({want_rrset_record['name']: want_rrset_record_disabled})
+
+                      if new_rrset_records:
+                        log.debug(f'powerdns: new rrset records: {new_rrset_records}')
+
+                        for new_rrset_record in new_rrset_records:
+                          if rrset_name not in ret['changes']['rrsets']:
+                            ret['changes']['rrsets'][rrset_name] = {
+                              'old': {},
+                              'new': {},
+                            }
+
+                          for x in ['old', 'new']:
+                            if 'records' not in ret['changes']['rrsets'][rrset_name][x]:
+                              ret['changes']['rrsets'][rrset_name][x]['records'] = []
+
+                          ret['changes']['rrsets'][rrset_name]['old']['records'].append({new_rrset_record['content']: None})
+                          ret['changes']['rrsets'][rrset_name]['new']['records'].append({new_rrset_record['content']: not new_rrset_record.get('disabled', False)})
+
+                  else:
+                    if rrset_name not in ret['changes']['rrsets']:
+                      ret['changes']['rrsets'][rrset_name] = {
+                        'old': {},
+                        'new': {},
+                      }
+
+                    ret['changes']['rrsets'][rrset_name]['old'][rrset_key] = None
+                    ret['changes']['rrsets'][rrset_name]['new'][rrset_key] = want_rrset[rrset_key]                    
+
+                log.debug('powerdns: breaking after analyzing match')
+                break
+
+            # no existing rrset found with the given name
+            else:
+              log.debug(f'powerdns: rrset "{rrset_name}" not found')
+              ret['changes']['rrsets'][rrset_name] = {
+                'old': {},
+                'new': want_rrset,
+              }
+
+          if not ret['changes']['rrsets']:
+            del ret['changes']['rrsets']
+
+      if isinstance(want_value, str) or isinstance(want_value, list) and key != 'rrsets':
+        if want_value != have_value:
+          log.debug('powerdns: value differs')
+          ret['changes'][key] = {
+            'old': have_value,
+            'new': want_value,
           }
-        )
+
+          payload.update(
+            {
+              key: want_value,
+            }
+          )
+
+    log.debug(f'powerdns: payload: {payload}')
 
     if not ret['changes']:
       ret['result'] = True
@@ -75,11 +208,11 @@ def zone_present(name, kind=None, rrsets=None, masters=None, dnssec=None, nsec3p
     if not 'rrsets' in payload:
       payload['rrsets'] = []
 
-    ok, status, output = __salt__['powerdns.patch_zone'](zone, payload, 'REPLACE', session)
+    ok, status, output = __salt__['powerdns.patch_zone'](zone, payload, session)
 
     if ok:
       ret['result'] = True
-      ret['comment'] = 'Zone modified: {status} - {output}'
+      ret['comment'] = f'Zone modified: {status} - {output}'
 
     else:
       ret['result'] = False
